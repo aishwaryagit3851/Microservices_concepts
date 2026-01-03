@@ -1,0 +1,220 @@
+## Resilience.
+=====================================
+# Resilience of a system is the capability of a system to comeback to an acceptable operational state after a failure event has occured.
+
+
+Common Resilience Patterns in Microservices
+Resilience patterns in microservices are strategies that help applications maintain availability, reliability, and stability in the face of failure or high demand. In distributed systems, where many services interact over a network, it’s important to ensure that failures in one component don’t compromise the entire system. Below is a detailed explanation of common resilience patterns:
+
+1. Retry Pattern
+
+The retry pattern is used when an operation fails temporarily, often due to transient errors like network timeouts or brief service unavailability. Instead of giving up immediately, the system retries the operation after a brief pause. This is useful for handling momentary network glitches or short service downtimes.
+Implementation:
+Retry Logic: You can implement simple retries or use exponential backoff (where the wait time increases with each attempt). For example, retry the operation after 1 second, then 2 seconds, and then 4 seconds.
+Max Attempts: It’s important to set a limit on retries to avoid indefinite loops, which could further stress the system.
+Example:
+If a service call to a payment gateway fails due to a network issue, retrying after a short delay may allow the payment to go through successfully.
+
+2. Circuit Breaker Pattern
+
+The circuit breaker pattern prevents a service from continuously trying to call a failing service, which can lead to resource exhaustion. Like an electrical circuit breaker, it "opens" the connection after a certain number of failures, blocking further attempts to access the faulty service. Once the service becomes healthy again, the circuit is “closed,” allowing traffic to resume.
+Implementation:
+Closed State: The system operates normally, allowing calls to the service.
+Open State: After a threshold of failed calls is reached, the circuit opens, stopping all further requests to the failing service.
+Half-Open State: After a timeout, the system allows a few requests to test if the service has recovered. If successful, the circuit closes again.
+Example:
+If a payment service goes down, the circuit breaker will open and stop further requests, preventing a backlog of failed requests.
+
+3. Bulkhead Pattern
+
+The bulkhead pattern is inspired by the design of ships, where compartments are separated to prevent water from spreading and sinking the whole ship. In microservices, bulkheads isolate services from each other to prevent failures in one service from cascading to others. Each service is given its own isolated resources (e.g., thread pools or connection pools).
+Implementation:
+Services or service components are allocated separate pools of resources (e.g., CPU, memory, threads) to limit the impact of failure or overload in one part of the system.
+If a service fails, only its resources are exhausted, while other services continue to function.
+Example:
+In an e-commerce system, the payment and order processing services can be separated by resource isolation. If the payment service becomes overloaded, it won’t affect order processing.
+
+
+4. Timeout Pattern
+
+The timeout pattern prevents a service from waiting indefinitely for a response from another service. If a service takes too long to respond, a timeout is triggered, allowing the system to fail quickly and avoid being blocked by slow responses.
+Implementation:
+Set a maximum amount of time a service will wait for a response before timing out.
+The timeout duration should balance between giving the service enough time to complete its task and ensuring that the system doesn't wait too long, causing delays in other parts of the system.
+Example:
+When an API request is made to an external shipping provider, if it takes longer than 5 seconds to respond, a timeout is triggered, and a fallback response is returned.
+5. Fallback Pattern
+The fallback pattern provides an alternative response or service when a primary service fails or is unavailable. This ensures that the system can continue operating, even if the quality of the response is degraded.
+
+Implementation:
+Define a default response or an alternative service to handle requests when the main service fails.
+Fallbacks can include static responses, cached data, or an entirely different service that can perform the task in a limited capacity.
+Example:
+If a product recommendation service fails, the system could fall back to showing top-selling products instead of personalized recommendations.
+6. Load Shedding Pattern
+Load shedding is the process of shedding excess load to maintain system stability. When a system experiences high traffic or resource demand, it can prioritize important requests and reject or delay less critical ones, ensuring that essential services continue operating smoothly.
+
+Implementation:
+Define thresholds for system load and implement mechanisms to reject or delay low-priority requests.
+Use queuing or rate-limiting techniques to control the number of incoming requests.
+Example:
+During peak shopping periods, a website might prioritize payment and order processing requests, while delaying less critical services like user account updates.
+7. Cache Pattern
+The cache pattern involves storing frequently accessed data in a temporary storage location, allowing faster access and reducing load on underlying services. Caching can improve performance and prevent failures by reducing the number of calls to slower, external services.
+
+Implementation:
+Use an in-memory cache (e.g., Redis or Memcached) to store responses to frequent requests.
+Ensure that cached data is updated periodically to prevent stale data from being returned.
+Example:
+An online retail website might cache product details and prices so that users can quickly access them without querying the database for every request.
+
+
+
+Among all these Circuit breaker is very important topic, lets discuss more about that.:==
+===========================================================================================
+
+1️⃣ What Is a Circuit Breaker? (Plain English)
+
+A circuit breaker prevents your service from repeatedly calling a failing or slow dependency.
+
+Think of it like an electrical circuit breaker:
+If current overloads → breaker trips, Prevents damage ,After some time → tries again
+
+In Microservices:
+Service A → calls → Service B
+Service B is slow / down
+Circuit breaker cuts the calls
+Service A survives
+
+STEP-BY-STEP IMPLEMENTATION (Spring Boot + Resilience4j):==
+
+STEP 1️⃣ Add Dependencies in pom.xml:
+<dependency>
+    <groupId>io.github.resilience4j</groupId>
+    <artifactId>resilience4j-spring-boot3</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>, we need actuator exposes metrics & health.
+
+STEP 2️⃣ Application Configuration:=
+
+application.properties
+# ===============================
+# Resilience4j Circuit Breaker
+# ===============================
+
+resilience4j.circuitbreaker.instances.userServiceCB.registerHealthIndicator=true
+resilience4j.circuitbreaker.instances.userServiceCB.slidingWindowType=COUNT_BASED
+resilience4j.circuitbreaker.instances.userServiceCB.slidingWindowSize=10
+resilience4j.circuitbreaker.instances.userServiceCB.minimumNumberOfCalls=5
+resilience4j.circuitbreaker.instances.userServiceCB.failureRateThreshold=50
+resilience4j.circuitbreaker.instances.userServiceCB.waitDurationInOpenState=10s
+resilience4j.circuitbreaker.instances.userServiceCB.permittedNumberOfCallsInHalfOpenState=3
+
+
+What Each Property Means
+Property	Meaning
+slidingWindowSize	Track last 10 calls
+minimumNumberOfCalls	Start evaluating after 5 calls
+failureRateThreshold	Open CB if ≥50% failures
+waitDurationInOpenState	Stay OPEN for 10 seconds
+permittedNumberOfCallsInHalfOpenState	Test calls
+
+STEP 3️⃣ Optional: Enable Actuator Endpoints:=
+management.endpoints.web.exposure.include=health,info
+management.endpoint.health.show-details=always
+This allows you to see circuit breaker status.
+
+STEP 4️⃣ Simulate a Failing Downstream Service:=
+
+@RestController
+@RequestMapping("/external")
+public class ExternalController {
+
+    @GetMapping("/data")
+    public String unstableService() {
+        if (Math.random() > 0.5) {
+            throw new RuntimeException("Simulated Failure");
+        }
+        return "Success";
+    }
+}
+
+
+STEP 5️⃣ Service Layer with Circuit Breaker:=
+
+@Service
+public class UserService {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @CircuitBreaker(
+        name = "userServiceCB",
+        fallbackMethod = "fallback"
+    )
+    public String fetchData() {
+        return restTemplate.getForObject(
+            "http://localhost:8080/external/data",
+            String.class
+        );
+    }
+
+    // Fallback method rules:
+    // 1. Same return type
+    // 2. Same params + Exception
+    public String fallback(Exception ex) {
+        return "Fallback response: Service temporarily unavailable";
+    }
+}
+
+STEP 6️⃣ Controller:=
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    private final UserService service;
+
+    public UserController(UserService service) {
+        this.service = service;
+    }
+
+    @GetMapping("/data")
+    public String getData() {
+        return service.fetchData();
+    }
+}
+
+
+STEP 7️⃣ How to Test Circuit Breaker
+
+Start the application
+Hit:
+http://localhost:8080/users/data
+Trigger failures (random)
+After threshold → CB opens
+Calls instantly go to fallback
+After 10 seconds → HALF_OPEN → test calls
+
+STEP 8️⃣ View Circuit Breaker Status
+
+Open:
+http://localhost:8080/actuator/health
+You’ll see something like:
+
+"userServiceCB": {
+  "status": "OPEN"
+}
+
+
+STEP 9️⃣ Important Notes (Real-World Tips)
+
+✅ Always combine with timeout
+Circuit breaker does NOT stop slow calls by itself.
+✅ Circuit breaker is per-instance
+Each service instance has its own CB state.
+❌ Don’t use CB blindly on DB calls
+Use it mainly for remote calls.
